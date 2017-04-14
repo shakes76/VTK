@@ -123,7 +123,7 @@ int vtkFFMPEGWriterInternal::Start()
     }
 
   //choose avi media file format
-  this->avOutputFormat = guess_format("avi", NULL, NULL);
+  this->avOutputFormat = av_guess_format("avi", NULL, NULL);
   if (!this->avOutputFormat) 
     {
     vtkGenericWarningMacro (<< "Could not open the avi media file format.");
@@ -140,7 +140,7 @@ int vtkFFMPEGWriterInternal::Start()
   strcpy(this->avFormatContext->filename, this->Writer->GetFileName());
 
   //create a stream for that file
-  this->avStream = av_new_stream(this->avFormatContext, 0);
+  this->avStream = avformat_new_stream(this->avFormatContext, 0);
   if (!this->avStream) 
     {
     vtkGenericWarningMacro (<< "Could not create video stream.");
@@ -149,8 +149,8 @@ int vtkFFMPEGWriterInternal::Start()
   
   //Set up the codec.
   AVCodecContext *c = this->avStream->codec;
-  c->codec_id = (CodecID)this->avOutputFormat->video_codec;
-  c->codec_type = CODEC_TYPE_VIDEO;
+  c->codec_id = (AVCodecID)this->avOutputFormat->video_codec;
+  c->codec_type = AVMEDIA_TYPE_VIDEO;
   c->width = this->Dim[0];
   c->height = this->Dim[1];
   c->pix_fmt = PIX_FMT_YUVJ420P;
@@ -193,11 +193,11 @@ int vtkFFMPEGWriterInternal::Start()
     }
 
   //apply the chosen parameters
-  if (av_set_parameters(this->avFormatContext, NULL) < 0)
-    {
-    vtkGenericWarningMacro (<< "Invalid output format parameters." );
-    return 0;
-    }
+  //if (av_set_parameters(this->avFormatContext, NULL) < 0)
+    //{
+    //vtkGenericWarningMacro (<< "Invalid output format parameters." );
+    //return 0;
+    //}
 
   //manufacture a codec with the chosen parameters
   AVCodec *codec = avcodec_find_encoder(c->codec_id);
@@ -206,7 +206,7 @@ int vtkFFMPEGWriterInternal::Start()
     vtkGenericWarningMacro (<< "Codec not found." );
     return 0;
     }
-  if (avcodec_open(c, codec) < 0) 
+  if (avcodec_open2(c, codec, NULL) < 0) 
     {
     vtkGenericWarningMacro (<< "Could not open codec.");
     return 0;
@@ -259,14 +259,14 @@ int vtkFFMPEGWriterInternal::Start()
 
 
   //Finally, open the file and start it off.
-  if (url_fopen(&this->avFormatContext->pb, this->avFormatContext->filename, URL_WRONLY) < 0) 
+  if (avio_open(&this->avFormatContext->pb, this->avFormatContext->filename, AVIO_FLAG_WRITE) < 0) 
     {
     vtkGenericWarningMacro (<< "Could not open " << this->Writer->GetFileName() << "." );
     return 0;
     }
   this->openedFile = 1;
 
-  av_write_header(this->avFormatContext);
+  avformat_write_header(this->avFormatContext, NULL);
   return 1;
 }
 
@@ -343,7 +343,7 @@ int vtkFFMPEGWriterInternal::Write(vtkImageData *id)
     pkt.stream_index = this->avStream->index;
     if (cc->coded_frame->key_frame) //treat keyframes well
       {
-      pkt.flags |= PKT_FLAG_KEY;
+      pkt.flags |= AV_PKT_FLAG_KEY;
       }
     pkt.duration = 0; //presentation duration in time_base units or 0 if NA
     pkt.pos = -1; //byte position in stream or -1 if NA
@@ -389,9 +389,9 @@ void vtkFFMPEGWriterInternal::End()
       {
       av_write_trailer(this->avFormatContext);
 #ifdef VTK_FFMPEG_OLD_URL_FCLOSE
-      url_fclose(&this->avFormatContext->pb);
+      avio_close(&this->avFormatContext->pb);
 #else
-      url_fclose(this->avFormatContext->pb);
+      avio_close(this->avFormatContext->pb);
 #endif
       this->openedFile = 0;
       }
